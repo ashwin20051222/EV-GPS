@@ -80,34 +80,51 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
+    // Data endpoint returns [[lat, lon, timestamp], ...] with newest last
     const API_URL = 'https://yolo-racer.infinityfree.me/getroute.php?limit=500';
 
+    // Leaflet setup
     const map = L.map('map').setView([0, 0], 2);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18,
-    }).addTo(map);
-
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
     const route = L.polyline([], { color: 'blue', weight: 4 }).addTo(map);
     const liveMarker = L.marker([0, 0]).addTo(map);
-
     const locationList = document.getElementById('locationList');
 
     async function refresh() {
       try {
-        const response = await fetch(API_URL + '&t=' + Date.now(), { cache: 'no-store' });
+        // Cache-buster to force fresh fetches
+        const url = API_URL + '&t=' + Date.now();
+        const response = await fetch(url, { cache: 'no-store' });
         const points = await response.json();
-        if (!points.length) return;
-        const latlngs = points.map(p => [p[0], p[1]]);
+
+        if (!Array.isArray(points) || !points.length) return;
+
+        // Drop any [0,0,...] entries to avoid "Null Island"
+        const valid = points.filter(p =>
+          Array.isArray(p) && p.length >= 2 && Number(p[0]) !== 0 && Number(p[1]) !== 0
+        );
+        if (!valid.length) return;
+
+        // Update route polyline
+        const latlngs = valid.map(p => [Number(p[0]), Number(p[1])]);
         route.setLatLngs(latlngs);
 
-        locationList.innerHTML = points.slice(0, 10).map(p => {
-          const date = new Date(p[2]);
-          return `<li>${date.toLocaleString()}<br/>[${p[0].toFixed(5)}, ${p[1].toFixed(5)}]</li>`;
-        }).join('');
+        // Update sidebar with last 10 items
+        locationList.innerHTML = valid.slice(-10).map(p => {
+          const ts = p[2] ? String(p[2]) : '';
+          const when = ts ? new Date(ts).toLocaleString() : '';
+          const lat = Number(p[0]).toFixed(5);
+          const lon = Number(p[1]).toFixed(5);
+          return `<li>${when}<br/>[${lat}, ${lon}]</li>`;
+        }).reverse().join('');
 
+        // Move live marker to the last valid point
         const last = latlngs[latlngs.length - 1];
         liveMarker.setLatLng(last);
-        map.setView(last, 15);
+        if (!map._movedOnce) {
+          map.setView(last, 15);
+          map._movedOnce = true;
+        }
       } catch (err) {
         console.error('Fetch error:', err);
       }
