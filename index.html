@@ -71,6 +71,11 @@
     color: #888;
     font-style: italic;
   }
+  .status {
+    color: #666;
+    font-size: 0.8rem;
+    margin-bottom: 10px;
+  }
 </style>
 </head>
 <body>
@@ -78,7 +83,8 @@
     <header>YOLO-RACING Tracker</header>
     <div id="map"></div>
     <aside class="sidebar">
-      <h3>Latest Data (Raw)</h3>
+      <h3>Latest Data</h3>
+      <div id="status" class="status">Loading...</div>
       <ul id="locationList"></ul>
     </aside>
     <footer>© 2025 YOLO RACER EV Project</footer>
@@ -86,26 +92,25 @@
 
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
   <script>
-    // Data endpoint returns [[lat, lon, timestamp], ...] with newest last
-    const API_URL = 'https://yolo-racer.infinityfree.me/getroute.php?limit=500';
-
     // Leaflet setup
     const map = L.map('map').setView([0, 0], 2);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 18 }).addTo(map);
     const route = L.polyline([], { color: 'blue', weight: 4 }).addTo(map);
     const liveMarker = L.marker([0, 0]).addTo(map);
     const locationList = document.getElementById('locationList');
+    const status = document.getElementById('status');
 
-    async function refresh() {
+    // JSONP callback function - will be called by the server
+    function handleGpsData(points) {
       try {
-        // Cache-buster to force fresh fetches
-        const url = API_URL + '&t=' + Date.now();
-        const response = await fetch(url, { cache: 'no-store' });
-        const points = await response.json();
+        status.textContent = `Loaded ${points.length} points`;
+        
+        if (!Array.isArray(points) || !points.length) {
+          status.textContent = 'No data received';
+          return;
+        }
 
-        if (!Array.isArray(points) || !points.length) return;
-
-        // Show the last 10 rows exactly as received (for debugging)
+        // Show the last 10 rows
         const last10 = points.slice(-10);
         locationList.innerHTML = last10.map(p => {
           const lat = Number(p[0]).toFixed(5);
@@ -117,38 +122,58 @@
           return `<li class="${className}">${when}<br/>[${lat}, ${lon}]</li>`;
         }).reverse().join('');
 
-        // Drop any [0,0,...] entries for the map
+        // Filter valid coordinates for map
         const valid = points.filter(p =>
           Array.isArray(p) && p.length >= 2 && Number(p[0]) !== 0 && Number(p[1]) !== 0
         );
 
         if (!valid.length) {
-          console.log('No valid coordinates found');
+          status.textContent = 'No valid coordinates found';
           return;
         }
 
-        // Update route polyline with valid points only
+        // Update map
         const latlngs = valid.map(p => [Number(p[0]), Number(p[1])]);
         route.setLatLngs(latlngs);
 
-        // Move live marker to the last valid point
         const last = latlngs[latlngs.length - 1];
         liveMarker.setLatLng(last);
-        console.log('Moving marker to:', last);
+        status.textContent = `Updated: ${valid.length} valid points`;
 
-        // Center map on first load only
         if (!map._movedOnce) {
           map.setView(last, 15);
           map._movedOnce = true;
         }
 
       } catch (err) {
-        console.error('Fetch error:', err);
+        status.textContent = 'Error processing data';
+        console.error('Data processing error:', err);
       }
     }
 
-    refresh();
-    setInterval(refresh, 5000);
+    // JSONP request function
+    function loadData() {
+      // Remove any existing script
+      const existingScript = document.getElementById('jsonp-script');
+      if (existingScript) {
+        existingScript.remove();
+      }
+
+      // Create new script tag for JSONP
+      const script = document.createElement('script');
+      script.id = 'jsonp-script';
+      script.src = `https://yolo-racer.infinityfree.me/getroute.php?limit=500&callback=handleGpsData&t=${Date.now()}`;
+      
+      script.onerror = function() {
+        status.textContent = 'Failed to load data';
+      };
+      
+      document.head.appendChild(script);
+    }
+
+    // Load data initially and then every 5 seconds
+    loadData();
+    setInterval(loadData, 5000);
   </script>
 </body>
 </html>
