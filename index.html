@@ -94,7 +94,7 @@
 
     async function refresh() {
       try {
-        const response = await fetch(API_URL, { cache: 'no-store' });
+        const response = await fetch(API_URL + '&t=' + Date.now(), { cache: 'no-store' });
         const points = await response.json();
         if (!points.length) return;
         const latlngs = points.map(p => [p[0], p[1]]);
