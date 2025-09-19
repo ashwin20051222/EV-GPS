@@ -41,7 +41,7 @@
     padding: 20px;
     overflow-y: auto;
     box-shadow: inset 0 0 10px #015451aa;
-    font-size: 0.9rem;
+    font-size: 0.8rem;
   }
   footer {
     grid-area: footer;
@@ -54,16 +54,22 @@
   h3 {
     margin-top: 0;
     color: #004d40;
+    font-size: 1rem;
   }
   ul#locationList {
     list-style: none;
     padding-left: 0;
   }
   ul#locationList li {
-    margin-bottom: 12px;
+    margin-bottom: 8px;
     border-bottom: 1px solid #c1eede;
-    padding-bottom: 4px;
+    padding-bottom: 3px;
     color: #00796b;
+    font-size: 0.75rem;
+  }
+  .zero {
+    color: #888;
+    font-style: italic;
   }
 </style>
 </head>
@@ -72,7 +78,7 @@
     <header>YOLO-RACING Tracker</header>
     <div id="map"></div>
     <aside class="sidebar">
-      <h3>Recent Locations</h3>
+      <h3>Latest Data (Raw)</h3>
       <ul id="locationList"></ul>
     </aside>
     <footer>© 2025 YOLO RACER EV Project</footer>
@@ -99,32 +105,43 @@
 
         if (!Array.isArray(points) || !points.length) return;
 
-        // Drop any [0,0,...] entries to avoid "Null Island"
+        // Show the last 10 rows exactly as received (for debugging)
+        const last10 = points.slice(-10);
+        locationList.innerHTML = last10.map(p => {
+          const lat = Number(p[0]).toFixed(5);
+          const lon = Number(p[1]).toFixed(5);
+          const ts = p[2] ? String(p[2]) : '';
+          const when = ts ? new Date(ts).toLocaleString() : 'no time';
+          const isZero = (Number(p[0]) === 0 && Number(p[1]) === 0);
+          const className = isZero ? 'zero' : '';
+          return `<li class="${className}">${when}<br/>[${lat}, ${lon}]</li>`;
+        }).reverse().join('');
+
+        // Drop any [0,0,...] entries for the map
         const valid = points.filter(p =>
           Array.isArray(p) && p.length >= 2 && Number(p[0]) !== 0 && Number(p[1]) !== 0
         );
-        if (!valid.length) return;
 
-        // Update route polyline
+        if (!valid.length) {
+          console.log('No valid coordinates found');
+          return;
+        }
+
+        // Update route polyline with valid points only
         const latlngs = valid.map(p => [Number(p[0]), Number(p[1])]);
         route.setLatLngs(latlngs);
-
-        // Update sidebar with last 10 items
-        locationList.innerHTML = valid.slice(-10).map(p => {
-          const ts = p[2] ? String(p[2]) : '';
-          const when = ts ? new Date(ts).toLocaleString() : '';
-          const lat = Number(p[0]).toFixed(5);
-          const lon = Number(p[1]).toFixed(5);
-          return `<li>${when}<br/>[${lat}, ${lon}]</li>`;
-        }).reverse().join('');
 
         // Move live marker to the last valid point
         const last = latlngs[latlngs.length - 1];
         liveMarker.setLatLng(last);
+        console.log('Moving marker to:', last);
+
+        // Center map on first load only
         if (!map._movedOnce) {
           map.setView(last, 15);
           map._movedOnce = true;
         }
+
       } catch (err) {
         console.error('Fetch error:', err);
       }
